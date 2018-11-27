@@ -1,0 +1,155 @@
+#!/usr/bin/env python2
+
+import urllib2
+import flickrapi
+import datetime
+import json
+import re
+import os
+import time
+import webbrowser
+import click
+from utils import writejson, mkdirsafeish
+
+
+def export(user_id, photoset_id, api_key, api_secret):
+    flickr = flickrapi.FlickrAPI(api_key, api_secret)
+
+    if not flickr.token_valid(perms='read'):
+        flickr.get_request_token(oauth_callback='oob')
+        authorize_url = flickr.auth_url(perms='read')
+        webbrowser.open_new_tab(authorize_url)
+        verifier = str(input('Verifier code: '))
+        token = flickr.get_access_token(verifier)
+
+    per_page = 100
+    page = 1
+    photos_out = list()
+
+    album = flickr.photosets.getInfo(user_id=user_id, photoset_id=photoset_id).findall('photoset')[0]
+    ainfo = dict()
+    ainfo['title'] = album.findall('title')[0].text
+    ainfo['description'] = album.findall('description')[0].text
+    ainfo['date_create'] = album.get('date_create')
+    ainfo['date_update'] = album.get('date_update')
+    print 'Processing album '+photoset_id
+    target = os.path.join('albums', photoset_id)
+    mkdirsafeish(target)
+    writejson(target+'/meta.json', ainfo)
+
+
+
+    # while True loop till we get no photos back
+    while True:
+        # call the photos.search API
+        # http://www.flickr.com/services/api/flickr.photos.search.html
+        print "Fetching page %d..." % page
+        extras = [
+            'original_format', 'tags', 'views', 'path_alias', 'geo',
+            'url_o', 'url_b', 'url_c', 'url_z', 'url_t', 'url_m', 'url_sq',
+            'date_upload', 'date_taken', 'license', 'description', 'media'
+        ]
+        photos_resp = flickr.photosets.getPhotos(
+            user_id=user_id, photoset_id=photoset_id, per_page=per_page, page=page,
+            extras=','.join(extras))
+        print "OK"
+        photo_list = photos_resp.findall('photoset')[0]
+        npages = int(photo_list.get('pages'))
+        print 'Processing page %d of %d' % (page, npages)
+        # increment the page number before we forget so we don't endlessly loop
+        page = page+1;
+
+        # grab the first and only 'photos' node
+
+
+        # if the list of photos is empty we must have reached the end of this user's library and break out of the while True
+        if len(photo_list) == 0:
+          break;
+
+        # else we loop through the photos
+        for photo in photo_list:
+          # get all the data we can
+          p = {}
+          pid = p['id'] = photo.get('id')
+          taken = p['dateTaken'] = int(time.mktime(time.strptime(photo.get('datetaken'), '%Y-%m-%d %H:%M:%S')))
+          name = '{}-{}'.format(taken, pid)
+          jsonname = '{}/{}.json'.format(target, name)
+          if os.path.exists(jsonname):
+              print 'Skipping ', jsonname
+              continue
+          p['permission'] = bool(int(photo.get('ispublic')))
+          p['title'] = photo.get('title')
+          p['media'] = photo.get('media')
+          description = photo.findall('description')[0].text
+          if description is not None:
+            p['description'] = description
+
+          if photo.get('latitude') != '0':
+            p['latitude'] = float(photo.get('latitude'))
+
+          if photo.get('longitude') != '0':
+            p['longitude'] = float(photo.get('longitude'))
+
+          if len(photo.get('tags')) > 0:
+            p['tags'] = photo.get('tags').split(' ')
+          else:
+            p['tags'] = []
+          if photo.get('place_id') is not None:
+            p['tags'].append("flickr:place_id=%s" % photo.get('place_id'))
+
+          if photo.get('woe_id') is not None:
+            p['tags'].append("geo:woe_id=%s" % photo.get('woe_id'))
+
+          p['tags'] = ",".join(p['tags'])
+          p['dateUploaded'] = int(photo.get('dateupload'))
+
+          # Attention : this is returned only for Pro accounts, it seems
+          if photo.get('url_o') is not None:
+            p['photo'] = photo.get('url_o')
+          elif photo.get('url_b') is not None:
+            p['photo'] = photo.get('url_b')
+          elif photo.get('url_c') is not None:
+            p['photo'] = photo.get('url_c')
+          elif photo.get('url_z') is not None:
+            p['photo'] = photo.get('url_z')
+
+          comments = flickr.photos.comments.getList(photo_id=pid).findall('comments')[0].findall('comment')
+          for comment in comments:
+            if not 'comments' in p:
+              p['comments'] = list()
+            p['comments'].append({
+              'id': comment.get('id'),
+              'author': comment.get('author'),
+              'authorname': comment.get('authorname'),
+              'datecreate': comment.get('datecreate'),
+              'permalink': comment.get('permalink'),
+              'text': comment.text
+            })
+
+          print 'Processing ', name
+          writejson(jsonname, p)
+          filedata = urllib2.urlopen(p['photo'])
+          datatowrite = filedata.read()
+          with open('{}/{}.jpg'.format(target, name), 'wb') as f:
+            f.write(datatowrite)
+
+        if page > npages:
+          page = 1
+          break
+
+# construct the url for the original photo
+# currently this requires a pro account
+def constructUrl( photo ):
+  return "http://farm%s.staticflickr.com/%s/%s_%s_o.%s" % (photo.get('farm'), photo.get('server'), photo.get('id'), photo.get('originalsecret'), photo.get('originalformat'))
+
+
+@click.command()
+@click.option('--user', required=True, help='the id of the user, for example 126734575@N08')
+@click.option('--album', required=True, help='the id of the album, for example 72157664430060697')
+@click.option('--api-key', required=True, help='your flickr api key')
+@click.option('--api-secret', required=True, help='your flickr api secret')
+def from_flickr(user, album, api_key, api_secret):
+    export(user, album, api_key, api_secret)
+
+if __name__ == '__main__':
+    from_flickr()

@@ -1,0 +1,6 @@
+pip install --user click flickrapi
+
+./from-flickr --help
+
+TODO, download videos
+https://www.flickr.com/groups/51035612836@N01/discuss/72157621698855558/
