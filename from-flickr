@@ -2,12 +2,8 @@
 
 import urllib2
 import flickrapi
-import datetime
-import json
-import re
 import os
 import time
-import webbrowser
 import click
 from utils import writejson, mkdirsafeish
 
@@ -16,11 +12,11 @@ def export(user_id, photoset_id, api_key, api_secret):
     flickr = flickrapi.FlickrAPI(api_key, api_secret)
 
     if not flickr.token_valid(perms='read'):
-        flickr.get_request_token(oauth_callback='oob')
-        authorize_url = flickr.auth_url(perms='read')
-        webbrowser.open_new_tab(authorize_url)
-        verifier = str(input('Verifier code: '))
-        token = flickr.get_access_token(verifier)
+        flickr.get_request_token(oauth_callback=u'oob')
+        authorize_url = flickr.auth_url(perms=u'read')
+        print 'Go get verifier code from '+authorize_url
+        verifier_code = unicode(raw_input('Verifier code: '))
+        token = flickr.get_access_token(verifier_code)
 
     per_page = 100
     page = 1
