@@ -1,6 +1,8 @@
-pip install --user click flickrapi
+pip install --user click flickrapi google-api-python-client
 
 ./from-flickr --help
+
+For to-google create api and download client_secret.json
 
 TODO, download videos
 https://www.flickr.com/groups/51035612836@N01/discuss/72157621698855558/
