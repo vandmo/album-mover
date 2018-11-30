@@ -6,132 +6,169 @@ import os
 import time
 import click
 from utils import writejson, mkdirsafeish
+from datetime import datetime
 
 
-def export(user_id, photoset_id, api_key, api_secret):
-    flickr = flickrapi.FlickrAPI(api_key, api_secret)
+def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_year):
+  flickr = flickrapi.FlickrAPI(api_key, api_secret)
 
-    if not flickr.token_valid(perms='read'):
-        flickr.get_request_token(oauth_callback=u'oob')
-        authorize_url = flickr.auth_url(perms=u'read')
-        print 'Go get verifier code from '+authorize_url
-        verifier_code = unicode(raw_input('Verifier code: '))
-        token = flickr.get_access_token(verifier_code)
+  if not flickr.token_valid(perms='read'):
+    flickr.get_request_token(oauth_callback=u'oob')
+    authorize_url = flickr.auth_url(perms=u'read')
+    print 'Go get verifier code from '+authorize_url
+    verifier_code = unicode(raw_input('Verifier code: '))
+    token = flickr.get_access_token(verifier_code)
 
-    per_page = 100
-    page = 1
-    photos_out = list()
+  isGroup = False
 
+  if '@' in albumOrGroup_id:
+    group_id = albumOrGroup_id
+    print 'You have pointed out a group'
+    isGroup = True
+  else:
+    photoset_id = albumOrGroup_id
+    print 'You have pointed out an album'
+
+  per_page = 100
+  page = 1
+  photos_out = list()
+
+  ainfo = dict()
+  target = ""
+
+  if isGroup:
+    group = flickr.groups.getInfo(user_id=user_id, group_id=group_id).findall('group')[0]
+    ainfo['name'] = group.findall('name')[0].text
+    ainfo['description'] = group.findall('description')[0].text
+    target = os.path.join('groups', group_id)
+  else:
     album = flickr.photosets.getInfo(user_id=user_id, photoset_id=photoset_id).findall('photoset')[0]
-    ainfo = dict()
     ainfo['title'] = album.findall('title')[0].text
     ainfo['description'] = album.findall('description')[0].text
     ainfo['date_create'] = album.get('date_create')
     ainfo['date_update'] = album.get('date_update')
     print 'Processing album '+photoset_id
     target = os.path.join('albums', photoset_id)
-    mkdirsafeish(target)
-    writejson(target+'/meta.json', ainfo)
+  
+  mkdirsafeish(target)
+  writejson(target+'/meta.json', ainfo)
 
+  # while True loop till we get no photos back
+  while True:
+      # call the photos.search API
+      # http://www.flickr.com/services/api/flickr.photos.search.html
+      print "Fetching page %d..." % page
+      extras = [
+          'original_format', 'tags', 'views', 'path_alias', 'geo',
+          'url_o', 'url_b', 'url_c', 'url_z', 'url_t', 'url_m', 'url_sq',
+          'date_upload', 'date_taken', 'license', 'description', 'media'
+      ]
 
-
-    # while True loop till we get no photos back
-    while True:
-        # call the photos.search API
-        # http://www.flickr.com/services/api/flickr.photos.search.html
-        print "Fetching page %d..." % page
-        extras = [
-            'original_format', 'tags', 'views', 'path_alias', 'geo',
-            'url_o', 'url_b', 'url_c', 'url_z', 'url_t', 'url_m', 'url_sq',
-            'date_upload', 'date_taken', 'license', 'description', 'media'
-        ]
+      if isGroup:
+        photos_resp = flickr.groups.pools.getPhotos(group_id=group_id, per_page=per_page, page=page,
+          extras=','.join(extras))
+        photo_list = photos_resp.findall('photos')[0]
+      else:
         photos_resp = flickr.photosets.getPhotos(
-            user_id=user_id, photoset_id=photoset_id, per_page=per_page, page=page,
-            extras=','.join(extras))
-        print "OK"
+          user_id=user_id, photoset_id=photoset_id, per_page=per_page, page=page,
+          extras=','.join(extras))
         photo_list = photos_resp.findall('photoset')[0]
-        npages = int(photo_list.get('pages'))
-        print 'Processing page %d of %d' % (page, npages)
-        # increment the page number before we forget so we don't endlessly loop
-        page = page+1;
 
-        # grab the first and only 'photos' node
+      print "OK"
 
+      npages = int(photo_list.get('pages'))
+      print 'Processing page %d of %d' % (page, npages)
+      # increment the page number before we forget so we don't endlessly loop
+      page = page+1
 
-        # if the list of photos is empty we must have reached the end of this user's library and break out of the while True
-        if len(photo_list) == 0:
-          break;
+      # if the list of photos is empty we must have reached the end of this user's library and break out of the while True
+      if len(photo_list) == 0:
+        break
 
-        # else we loop through the photos
-        for photo in photo_list:
-          # get all the data we can
-          p = {}
-          pid = p['id'] = photo.get('id')
-          taken = p['dateTaken'] = int(time.mktime(time.strptime(photo.get('datetaken'), '%Y-%m-%d %H:%M:%S')))
-          name = '{}-{}'.format(taken, pid)
-          jsonname = '{}/{}.json'.format(target, name)
-          if os.path.exists(jsonname):
-              print 'Skipping ', jsonname
-              continue
-          p['permission'] = bool(int(photo.get('ispublic')))
-          p['title'] = photo.get('title')
-          p['media'] = photo.get('media')
-          description = photo.findall('description')[0].text
-          if description is not None:
-            p['description'] = description
+      # else we loop through the photos
+      for photo in photo_list:
+        # get all the data we can
+        p = {}
+        pid = p['id'] = photo.get('id')
+        taken = p['dateTaken'] = int(time.mktime(time.strptime(photo.get('datetaken'), '%Y-%m-%d %H:%M:%S')))
+        p['dateTakenReadable'] = datetime.utcfromtimestamp(taken).strftime('%Y-%m-%d %H:%M:%S')
 
-          if photo.get('latitude') != '0':
-            p['latitude'] = float(photo.get('latitude'))
+        targetPath = target
 
-          if photo.get('longitude') != '0':
-            p['longitude'] = float(photo.get('longitude'))
+        if create_subfolder_per_year:
+          takenyear = datetime.utcfromtimestamp(taken).year
+          targetPath = '{}/{}/'.format(target, takenyear)
+          mkdirsafeish(targetPath)
 
-          if len(photo.get('tags')) > 0:
-            p['tags'] = photo.get('tags').split(' ')
-          else:
-            p['tags'] = []
-          if photo.get('place_id') is not None:
-            p['tags'].append("flickr:place_id=%s" % photo.get('place_id'))
+        name = '{}-{}'.format(taken, pid)
+        jsonname = '{}/{}.json'.format(targetPath, name)
+        if os.path.exists(jsonname):
+            print 'Skipping ', jsonname
+            continue
+        p['permission'] = bool(int(photo.get('ispublic')))
+        p['title'] = photo.get('title')
+        p['media'] = photo.get('media')
+        description = photo.findall('description')[0].text
+        if description is not None:
+          p['description'] = description
 
-          if photo.get('woe_id') is not None:
-            p['tags'].append("geo:woe_id=%s" % photo.get('woe_id'))
+        if photo.get('latitude') != '0':
+          p['latitude'] = float(photo.get('latitude'))
 
-          p['tags'] = ",".join(p['tags'])
-          p['dateUploaded'] = int(photo.get('dateupload'))
+        if photo.get('longitude') != '0':
+          p['longitude'] = float(photo.get('longitude'))
 
-          # Attention : this is returned only for Pro accounts, it seems
-          if photo.get('url_o') is not None:
-            p['photo'] = photo.get('url_o')
-          elif photo.get('url_b') is not None:
-            p['photo'] = photo.get('url_b')
-          elif photo.get('url_c') is not None:
-            p['photo'] = photo.get('url_c')
-          elif photo.get('url_z') is not None:
-            p['photo'] = photo.get('url_z')
+        if len(photo.get('tags')) > 0:
+          p['tags'] = photo.get('tags').split(' ')
+        else:
+          p['tags'] = []
+        if photo.get('place_id') is not None:
+          p['tags'].append("flickr:place_id=%s" % photo.get('place_id'))
 
-          comments = flickr.photos.comments.getList(photo_id=pid).findall('comments')[0].findall('comment')
-          for comment in comments:
-            if not 'comments' in p:
-              p['comments'] = list()
-            p['comments'].append({
-              'id': comment.get('id'),
-              'author': comment.get('author'),
-              'authorname': comment.get('authorname'),
-              'datecreate': comment.get('datecreate'),
-              'permalink': comment.get('permalink'),
-              'text': comment.text
-            })
+        if photo.get('woe_id') is not None:
+          p['tags'].append("geo:woe_id=%s" % photo.get('woe_id'))
 
-          print 'Processing ', name
-          writejson(jsonname, p)
-          filedata = urllib2.urlopen(p['photo'])
-          datatowrite = filedata.read()
-          with open('{}/{}.jpg'.format(target, name), 'wb') as f:
-            f.write(datatowrite)
+        p['tags'] = ",".join(p['tags'])
+        p['dateUploaded'] = int(photo.get('dateupload'))
 
-        if page > npages:
-          page = 1
-          break
+        # Attention : this is returned only for Pro accounts, it seems
+        if photo.get('url_o') is not None:
+          p['photo'] = photo.get('url_o')
+        elif photo.get('url_b') is not None:
+          p['photo'] = photo.get('url_b')
+        elif photo.get('url_c') is not None:
+          p['photo'] = photo.get('url_c')
+        elif photo.get('url_z') is not None:
+          p['photo'] = photo.get('url_z')
+
+        comments = flickr.photos.comments.getList(photo_id=pid).findall('comments')[0].findall('comment')
+        for comment in comments:
+          if not 'comments' in p:
+            p['comments'] = list()
+          p['comments'].append({
+            'id': comment.get('id'),
+            'author': comment.get('author'),
+            'authorname': comment.get('authorname'),
+            'datecreate': comment.get('datecreate'),
+            'permalink': comment.get('permalink'),
+            'text': comment.text
+          })
+
+        print 'Processing ', name
+        writejson(jsonname, p)
+        filedata = urllib2.urlopen(p['photo'])
+        datatowrite = filedata.read()
+        filetowrite = '{}/{}.jpg'.format(targetPath, name)
+        with open(filetowrite, 'wb') as f:
+          f.write(datatowrite)
+        
+        # Set the created file time as the day it was taken
+        os.utime(filetowrite, (time.time(),taken))
+        os.utime(jsonname, (time.time(),taken))
+
+      if page > npages:
+        page = 1
+        break
 
 # construct the url for the original photo
 # currently this requires a pro account
@@ -141,11 +178,12 @@ def constructUrl( photo ):
 
 @click.command()
 @click.option('--user', required=True, help='the id of the user, for example 126734575@N08')
-@click.option('--album', required=True, help='the id of the album, for example 72157664430060697')
+@click.option('--album-or-group', required=True, help='the id of the album, for example 72157664430060697 or 34427465497@N01 for a group')
 @click.option('--api-key', required=True, help='your flickr api key')
 @click.option('--api-secret', required=True, help='your flickr api secret')
-def from_flickr(user, album, api_key, api_secret):
-    export(user, album, api_key, api_secret)
+@click.option('--create-subfolder-per-year', required=False, help='create subfolder per year', is_flag=True, default=False)
+def from_flickr(user, album_or_group, api_key, api_secret, create_subfolder_per_year):
+    export(user, album_or_group, api_key, api_secret, create_subfolder_per_year)
 
 if __name__ == '__main__':
     from_flickr()
