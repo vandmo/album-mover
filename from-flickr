@@ -8,8 +8,8 @@ import click
 from utils import writejson, mkdirsafeish
 from datetime import datetime
 
-
 def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_year):
+    videoListFile = 'videosToDownloadInBrowser.txt'
     flickr = flickrapi.FlickrAPI(api_key, api_secret)
 
     if not flickr.token_valid(perms='read'):
@@ -41,7 +41,7 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
             user_id=user_id, group_id=group_id).findall('group')[0]
         ainfo['name'] = group.findall('name')[0].text
         ainfo['description'] = group.findall('description')[0].text
-        target = os.path.join('groups', group_id)
+        target = os.path.join('download/groups', group_id)
     else:
         album = flickr.photosets.getInfo(
             user_id=user_id, photoset_id=photoset_id).findall('photoset')[0]
@@ -50,7 +50,7 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
         ainfo['date_create'] = album.get('date_create')
         ainfo['date_update'] = album.get('date_update')
         print 'Processing album '+photoset_id
-        target = os.path.join('albums', photoset_id)
+        target = os.path.join('download/albums', photoset_id)
 
     mkdirsafeish(target)
     writejson(target+'/meta.json', ainfo)
@@ -79,16 +79,20 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
         print "OK"
 
         npages = int(photo_list.get('pages'))
-        print 'Processing page %d of %d' % (page, npages)
+        totalitems = int(photo_list.get('total'))
+        print 'Processing page %d of %d(%d - %d items of %d total items)' % (page, npages, (page-1)*per_page, totalitems if totalitems < page*per_page else page*per_page, totalitems)
         # increment the page number before we forget so we don't endlessly loop
         page = page+1
 
         # if the list of photos is empty we must have reached the end of this user's library and break out of the while True
         if len(photo_list) == 0:
+            print 'Done processing the download of {} items, please remember to check the {} file to manually download the videos'.format(totalitems, videoListFile)
             break
 
         # else we loop through the photos
         for photo in photo_list:
+            isVideo = False
+            extension = 'jpg'
             # get all the data we can
             p = {}
             pid = p['id'] = photo.get('id')
@@ -137,13 +141,25 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
 
             # Attention : this is returned only for Pro accounts, it seems
             if photo.get('url_o') is not None:
-                p['photo'] = photo.get('url_o')
+                p['downloadSource'] = photo.get('url_o')
             elif photo.get('url_b') is not None:
-                p['photo'] = photo.get('url_b')
+                p['downloadSource'] = photo.get('url_b')
             elif photo.get('url_c') is not None:
-                p['photo'] = photo.get('url_c')
+                p['downloadSource'] = photo.get('url_c')
             elif photo.get('url_z') is not None:
-                p['photo'] = photo.get('url_z')
+                p['downloadSource'] = photo.get('url_z')
+
+            #Due to the bug in the Flickr API that it's not possible to get the movie, the code below is retrieving a link that is not usable.
+            #if the bug is fixed(which i doubt) we can remove the workaround for writing out the manual download links.
+            if p['media'] == 'video':
+                sizeInfo = flickr.photos.getSizes(photo_id=pid)
+                sizes = sizeInfo.findall('sizes')[0]
+                isVideo = True
+                extension = 'mp4'
+
+                for size in sizes:
+                    if size.get('label') == 'Video Original':
+                        p['downloadSource'] = size.get('source')
 
             comments = flickr.photos.comments.getList(photo_id=pid).findall('comments')[
                 0].findall('comment')
@@ -159,13 +175,20 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                     'text': comment.text
                 })
 
-            print 'Processing ', name
+            print 'Processing {}.{}({})'.format(name, extension, p['downloadSource'])
             writejson(jsonname, p)
-            filedata = urllib2.urlopen(p['photo'])
-            datatowrite = filedata.read()
-            filetowrite = '{}/{}.jpg'.format(targetPath, name)
-            with open(filetowrite, 'wb') as f:
-                f.write(datatowrite)
+            # This part should be possible to run for all both videos and images, but due to the bug it's not possible.
+            if not isVideo:
+                filedata = urllib2.urlopen(p['downloadSource'])
+                datatowrite = filedata.read()
+                filetowrite = '{}/{}.{}'.format(targetPath, name, extension)
+                with open(filetowrite, 'wb') as f:
+                    f.write(datatowrite)
+            else:
+                print 'Due to a bug in the Flickr API the path to the original file is not working to download videos({}). All download file links will be appended to the file {}'.format(p['downloadSource'], videoListFile)
+                manualVideoDownloadListPath = '{}/{}'.format(targetPath, videoListFile)
+                with open(manualVideoDownloadListPath, 'a') as f:
+                    f.write('www.flickr.com/video_download.gne?id={}\n'.format(pid))
 
             # Set the created file time as the day it was taken
             os.utime(filetowrite, (time.time(), taken))
@@ -173,6 +196,7 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
 
         if page > npages:
             page = 1
+            print 'Done processing the download of {} items, please remember to check the {} file to manually download the videos'.format(totalitems, videoListFile)
             break
 
 # construct the url for the original photo

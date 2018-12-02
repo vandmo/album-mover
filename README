@@ -6,3 +6,6 @@ For to-google create api and download client_secret.json
 
 TODO, download videos
 https://www.flickr.com/groups/51035612836@N01/discuss/72157621698855558/
+They seemed to give up getting any attention on the 404 error for retrieving the orginal file, the implementation is now similar as discussed:
+https://www.flickr.com/groups/51035612836@N01/discuss/72157671986445591/
+A download link is created in a txt file instead.
