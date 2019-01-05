@@ -8,14 +8,20 @@ import click
 from utils import writejson, mkdirsafeish
 from datetime import datetime
 
-def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_year):
+
+def export(
+        user_id,
+        albumOrGroup_id,
+        api_key,
+        api_secret,
+        create_subfolder_per_year):
     videoListFile = 'videosToDownloadInBrowser.txt'
     flickr = flickrapi.FlickrAPI(api_key, api_secret)
 
     if not flickr.token_valid(perms='read'):
         flickr.get_request_token(oauth_callback=u'oob')
         authorize_url = flickr.auth_url(perms=u'read')
-        print 'Go get verifier code from '+authorize_url
+        print 'Go get verifier code from ' + authorize_url
         verifier_code = unicode(raw_input('Verifier code: '))
         token = flickr.get_access_token(verifier_code)
 
@@ -49,11 +55,11 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
         ainfo['description'] = album.findall('description')[0].text
         ainfo['date_create'] = album.get('date_create')
         ainfo['date_update'] = album.get('date_update')
-        print 'Processing album '+photoset_id
+        print 'Processing album ' + photoset_id
         target = os.path.join('download/albums', photoset_id)
 
     mkdirsafeish(target)
-    writejson(target+'/meta.json', ainfo)
+    writejson(target + '/meta.json', ainfo)
 
     # while True loop till we get no photos back
     while True:
@@ -67,12 +73,15 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
         ]
 
         if isGroup:
-            photos_resp = flickr.groups.pools.getPhotos(group_id=group_id, per_page=per_page, page=page,
-                                                        extras=','.join(extras))
+            photos_resp = flickr.groups.pools.getPhotos(
+                group_id=group_id, per_page=per_page, page=page, extras=','.join(extras))
             photo_list = photos_resp.findall('photos')[0]
         else:
             photos_resp = flickr.photosets.getPhotos(
-                user_id=user_id, photoset_id=photoset_id, per_page=per_page, page=page,
+                user_id=user_id,
+                photoset_id=photoset_id,
+                per_page=per_page,
+                page=page,
                 extras=','.join(extras))
             photo_list = photos_resp.findall('photoset')[0]
 
@@ -80,13 +89,19 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
 
         npages = int(photo_list.get('pages'))
         totalitems = int(photo_list.get('total'))
-        print 'Processing page %d of %d(%d - %d items of %d total items)' % (page, npages, (page-1)*per_page, totalitems if totalitems < page*per_page else page*per_page, totalitems)
+        print 'Processing page %d of %d(%d - %d items of %d total items)' % (page,
+                                                                             npages,
+                                                                             (page - 1) * per_page,
+                                                                             totalitems if totalitems < page * per_page else page * per_page,
+                                                                             totalitems)
         # increment the page number before we forget so we don't endlessly loop
-        page = page+1
+        page = page + 1
 
-        # if the list of photos is empty we must have reached the end of this user's library and break out of the while True
+        # if the list of photos is empty we must have reached the end of this
+        # user's library and break out of the while True
         if len(photo_list) == 0:
-            print 'Done processing the download of {} items, please remember to check the {} file to manually download the videos'.format(totalitems, videoListFile)
+            print 'Done processing the download of {} items, please remember to check the {} file to manually download the videos'.format(
+                totalitems, videoListFile)
             break
 
         # else we loop through the photos
@@ -149,8 +164,9 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
             elif photo.get('url_z') is not None:
                 p['downloadSource'] = photo.get('url_z')
 
-            #Due to the bug in the Flickr API that it's not possible to get the movie, the code below is retrieving a link that is not usable.
-            #if the bug is fixed(which i doubt) we can remove the workaround for writing out the manual download links.
+            # Due to the bug in the Flickr API that it's not possible to get the movie, the code below is retrieving a link that is not usable.
+            # if the bug is fixed(which i doubt) we can remove the workaround
+            # for writing out the manual download links.
             if p['media'] == 'video':
                 sizeInfo = flickr.photos.getSizes(photo_id=pid)
                 sizes = sizeInfo.findall('sizes')[0]
@@ -161,10 +177,10 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                     if size.get('label') == 'Video Original':
                         p['downloadSource'] = size.get('source')
 
-            comments = flickr.photos.comments.getList(photo_id=pid).findall('comments')[
-                0].findall('comment')
+            comments = flickr.photos.comments.getList(
+                photo_id=pid).findall('comments')[0].findall('comment')
             for comment in comments:
-                if not 'comments' in p:
+                if 'comments' not in p:
                     p['comments'] = list()
                 p['comments'].append({
                     'id': comment.get('id'),
@@ -175,9 +191,11 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                     'text': comment.text
                 })
 
-            print 'Processing {}.{}({})'.format(name, extension, p['downloadSource'])
+            print 'Processing {}.{}({})'.format(
+                name, extension, p['downloadSource'])
             writejson(jsonname, p)
-            # This part should be possible to run for all both videos and images, but due to the bug it's not possible.
+            # This part should be possible to run for all both videos and
+            # images, but due to the bug it's not possible.
             if not isVideo:
                 filedata = urllib2.urlopen(p['downloadSource'])
                 datatowrite = filedata.read()
@@ -185,10 +203,13 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                 with open(filetowrite, 'wb') as f:
                     f.write(datatowrite)
             else:
-                print 'Due to a bug in the Flickr API the path to the original file is not working to download videos({}). All download file links will be appended to the file {}'.format(p['downloadSource'], videoListFile)
-                manualVideoDownloadListPath = '{}/{}'.format(targetPath, videoListFile)
+                print 'Due to a bug in the Flickr API the path to the original file is not working to download videos({}). All download file links will be appended to the file {}'.format(
+                    p['downloadSource'], videoListFile)
+                manualVideoDownloadListPath = '{}/{}'.format(
+                    targetPath, videoListFile)
                 with open(manualVideoDownloadListPath, 'a') as f:
-                    f.write('https://www.flickr.com/video_download.gne?id={}\n'.format(pid))
+                    f.write(
+                        'https://www.flickr.com/video_download.gne?id={}\n'.format(pid))
 
             # Set the created file time as the day it was taken
             os.utime(filetowrite, (time.time(), taken))
@@ -200,9 +221,11 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                 for filename in filenames:
                     if filename == videoListFile:
                         txtFile = os.path.join(root, filename)
-                        htmlize(txtFile, os.path.splitext(txtFile)[0]+'.html')
+                        htmlize(
+                            txtFile, os.path.splitext(txtFile)[0] + '.html')
 
-            print 'Done processing the download of {} items, please remember to check the {}/.html file to manually download the videos'.format(totalitems, videoListFile)
+            print 'Done processing the download of {} items, please remember to check the {}/.html file to manually download the videos'.format(
+                totalitems, videoListFile)
             break
 
 # construct the url for the original photo
@@ -225,16 +248,33 @@ def htmlize(source, target):
 
 
 def constructUrl(photo):
-    return "http://farm%s.staticflickr.com/%s/%s_%s_o.%s" % (photo.get('farm'), photo.get('server'), photo.get('id'), photo.get('originalsecret'), photo.get('originalformat'))
+    return "http://farm%s.staticflickr.com/%s/%s_%s_o.%s" % (photo.get('farm'), photo.get(
+        'server'), photo.get('id'), photo.get('originalsecret'), photo.get('originalformat'))
 
 
 @click.command()
-@click.option('--user', required=True, help='the id of the user, for example 126734575@N08')
-@click.option('--album-or-group', required=True, help='the id of the album, for example 72157664430060697 or 34427465497@N01 for a group')
+@click.option(
+    '--user',
+    required=True,
+    help='the id of the user, for example 126734575@N08')
+@click.option(
+    '--album-or-group',
+    required=True,
+    help='the id of the album, for example 72157664430060697 or 34427465497@N01 for a group')
 @click.option('--api-key', required=True, help='your flickr api key')
 @click.option('--api-secret', required=True, help='your flickr api secret')
-@click.option('--create-subfolder-per-year', required=False, help='create subfolder per year', is_flag=True, default=False)
-def from_flickr(user, album_or_group, api_key, api_secret, create_subfolder_per_year):
+@click.option(
+    '--create-subfolder-per-year',
+    required=False,
+    help='create subfolder per year',
+    is_flag=True,
+    default=False)
+def from_flickr(
+        user,
+        album_or_group,
+        api_key,
+        api_secret,
+        create_subfolder_per_year):
     export(user, album_or_group, api_key,
            api_secret, create_subfolder_per_year)
 

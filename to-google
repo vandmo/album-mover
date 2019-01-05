@@ -18,13 +18,13 @@ def aggregate(data):
     if not agg:
         raise RuntimeError('Missing title')
     if 'description' in data and data['description']:
-        agg = agg+'\n\n'+data['description']
+        agg = agg + '\n\n' + data['description']
     if 'comments' in data:
         agg += '\n\nKommentarer\n'
         for comment in data['comments']:
-            agg += comment['authorname']+': '+comment['text']+'\n'
+            agg += comment['authorname'] + ': ' + comment['text'] + '\n'
     if len(agg) > 950:
-        raise RuntimeError('Aggregated description too long: '+agg)
+        raise RuntimeError('Aggregated description too long: ' + agg)
     return agg
 
 
@@ -51,9 +51,8 @@ def upload(folder):
 
     print(meta['title'])
 
-    files = [full_prefix(folder, f) for f in listdir(folder)
-             if is_photo_json(folder, f)]
-    files.sort()
+    files = sorted([full_prefix(folder, f) for f in listdir(folder)
+                    if is_photo_json(folder, f)])
 
     result = service.albums().create(body={
         'album': {'title': meta['title']}
@@ -72,15 +71,15 @@ def upload(folder):
         }
 
         r = requests.post(url, data=f, headers=headers)
-        print('Uploaded '+file)
+        print('Uploaded ' + file)
         return r.content
 
     for filename in files:
-        info = readjson(filename+'.json')
-        jpg = filename+'.jpg'
+        info = readjson(filename + '.json')
+        jpg = filename + '.jpg'
         description = aggregate(info)
         token = upload(service, jpg)
-        print('TOKEN '+token)
+        print('TOKEN ' + token)
 
         url = 'https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate'
         headers = {

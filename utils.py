@@ -12,6 +12,6 @@ def writejson(filename, v):
         f.write(json.dumps(v, indent=2))
 
 
-def mkdirsafeish( name ):
+def mkdirsafeish(name):
     if not os.path.exists(name):
         os.makedirs(name)
