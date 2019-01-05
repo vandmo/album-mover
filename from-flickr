@@ -34,7 +34,7 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
     photos_out = list()
 
     ainfo = dict()
-    target = ""
+    target = ''
 
     if isGroup:
         group = flickr.groups.getInfo(
@@ -188,7 +188,7 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
                 print 'Due to a bug in the Flickr API the path to the original file is not working to download videos({}). All download file links will be appended to the file {}'.format(p['downloadSource'], videoListFile)
                 manualVideoDownloadListPath = '{}/{}'.format(targetPath, videoListFile)
                 with open(manualVideoDownloadListPath, 'a') as f:
-                    f.write('www.flickr.com/video_download.gne?id={}\n'.format(pid))
+                    f.write('https://www.flickr.com/video_download.gne?id={}\n'.format(pid))
 
             # Set the created file time as the day it was taken
             os.utime(filetowrite, (time.time(), taken))
@@ -196,11 +196,32 @@ def export(user_id, albumOrGroup_id, api_key, api_secret, create_subfolder_per_y
 
         if page > npages:
             page = 1
-            print 'Done processing the download of {} items, please remember to check the {} file to manually download the videos'.format(totalitems, videoListFile)
+            for root, dirnames, filenames in os.walk(target):
+                for filename in filenames:
+                    if filename == videoListFile:
+                        txtFile = os.path.join(root, filename)
+                        htmlize(txtFile, os.path.splitext(txtFile)[0]+'.html')
+
+            print 'Done processing the download of {} items, please remember to check the {}/.html file to manually download the videos'.format(totalitems, videoListFile)
             break
 
 # construct the url for the original photo
 # currently this requires a pro account
+
+
+def htmlize(source, target):
+    with open(source) as f:
+        lines = f.readlines()
+    output = '<html><body><ol>\n'
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        output += '<li><a href="{0}">{0}</a></li>\n'.format(line)
+    output += '</ol></body></html>'
+    print 'Creating {}'.format(target)
+    with open(target, 'w') as f:
+        f.write(output)
 
 
 def constructUrl(photo):
