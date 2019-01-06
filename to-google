@@ -9,7 +9,7 @@ import os
 import click
 from os import listdir
 from os.path import isfile, join
-from utils import readjson
+from utils import readjson, writejson
 import requests
 
 
@@ -36,58 +36,45 @@ def full_prefix(folder, f):
     return os.path.join(folder, f[:-5])
 
 
-def upload(folder):
-    meta = readjson(os.path.join(folder, 'meta.json'))
+class GPhotos(object):
 
-    # Setup the Photo v1 API
-    SCOPES = 'https://www.googleapis.com/auth/photoslibrary'
-    store = file.Storage('credentials.json')
-    creds = store.get()
-    if not creds or creds.invalid:
-        flow = client.flow_from_clientsecrets('client_secret.json', SCOPES)
-        creds = tools.run_flow(flow, store)
-    service = build('photoslibrary', 'v1', http=creds.authorize(Http()))
-    access_token = service._http.request.credentials.access_token
+    def __init__(self):
+        # Setup the Photo v1 API
+        SCOPES = 'https://www.googleapis.com/auth/photoslibrary'
+        store = file.Storage('credentials.json')
+        creds = store.get()
+        if not creds or creds.invalid:
+            flow = client.flow_from_clientsecrets('client_secret.json', SCOPES)
+            creds = tools.run_flow(flow, store)
+        self._service = build('photoslibrary', 'v1', http=creds.authorize(Http()))
+        self._access_token = self._service._http.request.credentials.access_token
 
-    print(meta['title'])
-
-    files = sorted([full_prefix(folder, f) for f in listdir(folder)
-                    if is_photo_json(folder, f)])
-
-    result = service.albums().create(body={
-        'album': {'title': meta['title']}
-    }).execute()
-    aid = result['id']
-
-    def upload(service, file):
-        f = open(file, 'rb').read()
-
+    def upload(self, filename):
+        f = open(filename, 'rb').read()
         url = 'https://photoslibrary.googleapis.com/v1/uploads'
         headers = {
-            'Authorization': "Bearer " + access_token,
+            'Authorization': "Bearer " + self._access_token,
             'Content-Type': 'application/octet-stream',
-            'X-Goog-Upload-File-Name': file,
+            'X-Goog-Upload-File-Name': filename,
             'X-Goog-Upload-Protocol': "raw",
         }
-
         r = requests.post(url, data=f, headers=headers)
-        print('Uploaded ' + file)
+        print('Uploaded ' + filename)
         return r.content
 
-    for filename in files:
-        info = readjson(filename + '.json')
-        jpg = filename + '.jpg'
-        description = aggregate(info)
-        token = upload(service, jpg)
-        print('TOKEN ' + token)
+    def create_album(self, title):
+        return self._service.albums().create(body={
+            'album': {'title': title}
+        }).execute()
 
+    def batch_create(self, albumId, description, token):
         url = 'https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate'
         headers = {
-            'Authorization': "Bearer " + access_token,
+            'Authorization': "Bearer " + self._access_token,
             'Content-Type': 'application/json'
         }
         req = {
-            'albumId': aid,
+            'albumId': albumId,
             'newMediaItems': [
                 {
                     'description': description,
@@ -100,11 +87,38 @@ def upload(folder):
                 'position': 'LAST_IN_ALBUM'
             }
         }
-        r = requests.post(url, data=json.dumps(req), headers=headers)
-        print('REQUEST')
-        print(json.dumps(req))
+        return requests.post(url, data=json.dumps(req), headers=headers)
+
+def upload(folder):
+    metapath = os.path.join(folder, 'meta.json')
+    meta = readjson(metapath)
+    gphotos = GPhotos()
+
+    print(meta['title'])
+    gmeta = meta.get('google', dict())
+    meta['google'] = gmeta
+
+    if 'albumId' in gmeta:
+        print('Using existing album')
+        albumId = gmeta['albumId']
+    else:
+        print('Creating album')
+        result = gphotos.create_album(meta['title'])
+        albumId = gmeta['albumId'] = result['id']
+        writejson(metapath, meta)
+
+    files = sorted([full_prefix(folder, f) for f in listdir(folder)
+                    if is_photo_json(folder, f)])
+
+    for filename in files:
+        info = readjson(filename + '.json')
+        jpg = filename + '.jpg'
+        description = aggregate(info)
+        token = gphotos.upload(jpg)
+        print('TOKEN ' + token)
+        response = gphotos.batch_create(albumId, description, token)
         print('RESPONSE CONTENT')
-        print(r.content)
+        print(response.content)
 
 
 @click.command()

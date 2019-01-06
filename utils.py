@@ -15,3 +15,7 @@ def writejson(filename, v):
 def mkdirsafeish(name):
     if not os.path.exists(name):
         os.makedirs(name)
+
+def file_contains(path, content):
+    with open(path) as f:
+        return content in f.read()

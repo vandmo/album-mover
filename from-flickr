@@ -5,7 +5,7 @@ import flickrapi
 import os
 import time
 import click
-from utils import writejson, mkdirsafeish
+from utils import writejson, mkdirsafeish, file_contains
 from datetime import datetime
 
 
@@ -207,9 +207,10 @@ def export(
                     p['downloadSource'], videoListFile)
                 manualVideoDownloadListPath = '{}/{}'.format(
                     targetPath, videoListFile)
-                with open(manualVideoDownloadListPath, 'a') as f:
-                    f.write(
-                        'https://www.flickr.com/video_download.gne?id={}\n'.format(pid))
+                entry = 'https://www.flickr.com/video_download.gne?id={}\n'.format(pid)
+                if not file_contains(manualVideoDownloadListPath, entry):
+                    with open(manualVideoDownloadListPath, 'a') as f:
+                        f.write(entry)
 
             # Set the created file time as the day it was taken
             os.utime(filetowrite, (time.time(), taken))
